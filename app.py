@@ -12,7 +12,7 @@ if 'start' not in st.session_state:
 if not st.session_state.start:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.image("logo.png", width=260)
+        st.image("logo.png", width=260, use_container_width=True)  # Usar el nuevo parámetro
         st.markdown("<h1 style='text-align:center; margin-top:0.2rem;'>Shield_Sports</h1>", unsafe_allow_html=True)
         st.markdown("<p style='text-align:center; color:gray;'>Injury prevention assistant</p>", unsafe_allow_html=True)
     st.markdown("---")
