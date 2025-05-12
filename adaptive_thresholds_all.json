@@ -1,0 +1,15 @@
+{
+    "HRV_RMSSD_ms": 22.604,
+    "Sweat_Loss_ml_min": 15.317,
+    "Electrolyte_Loss_mmol_L": 0.766,
+    "Cadence_steps_min": 140.049,
+    "Impact_g": 2.8,
+    "Heart_Rate_bpm": 162.0,
+    "Estimated_Fatigue": 1.0,
+    "Temperature_C": 38.9,
+    "Ventilation_L_min": 19.987,
+    "Knee_Acceleration_Left_g": 2.073,
+    "Knee_Acceleration_Right_g": 2.173,
+    "Ankle_Acceleration_Left_g": 2.463,
+    "Ankle_Acceleration_Right_g": 2.567
+}
