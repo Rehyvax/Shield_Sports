@@ -12,6 +12,84 @@ from visuals import (
                 display_cadence_gauge, display_impact_gauge
             )
 import json
+USER_FILE = "users.json"
+
+def load_users():
+    if not os.path.exists(USER_FILE):
+        with open(USER_FILE, "w") as f:
+            json.dump({"Goris": "1234"}, f)
+    with open(USER_FILE, "r") as f:
+        return json.load(f)
+
+def save_users(users):
+    with open(USER_FILE, "w") as f:
+        json.dump(users, f, indent=4)
+
+def register_user(username, password):
+    users = load_users()
+    if username in users:
+        return False  # Username already exists
+    users[username] = password
+    save_users(users)
+    return True
+
+# Inicialización del estado de sesión
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "user_type" not in st.session_state:
+    st.session_state.user_type = None
+if 'start' not in st.session_state:
+    st.session_state.start = False
+if 'show_summary' not in st.session_state:
+    st.session_state.show_summary = False
+if 'block_training_loop' not in st.session_state:
+    st.session_state.block_training_loop = False
+
+# Interfaz de login (sólo si no se ha iniciado sesión)
+if not st.session_state.logged_in:
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.image("logo.png", width=180)
+        st.markdown("<h2 style='text-align: center; color: #FF6B00;'>Smart Trainer</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: gray;'>Log in to access the Smart Trainer platform</p>", unsafe_allow_html=True)
+
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+
+        if st.button("🔐 Login"):
+            users = load_users()
+            if username in users and users[username] == password:
+                st.session_state.logged_in = True
+                st.session_state.user_type = "admin"
+                st.session_state.username = username
+                st.success("Login successful")
+                st.rerun()
+            else:
+                st.error("Invalid username or password")
+
+        with st.expander("➕ Create new account"):
+            new_user = st.text_input("New username")
+            new_pass = st.text_input("New password", type="password")
+            confirm_pass = st.text_input("Confirm password", type="password")
+            if st.button("Register"):
+                if not new_user or not new_pass:
+                    st.warning(" Please fill all fields.")
+                elif new_user in load_users():
+                    st.warning(" Username already exists.")
+                elif new_pass != confirm_pass:
+                    st.warning(" Passwords do not match.")
+                else:
+                    if register_user(new_user, new_pass):
+                        st.success("✅ User registered successfully. You can now log in.")
+                    else:
+                        st.error(" Error registering user.")
+    st.stop()
+
+
+view_mode = st.session_state.get("view", "main")
+if view_mode == "summary" and st.session_state.get("finished_data") is None:
+    st.markdown("⏳ Cargando resumen del entrenamiento...")
+    st.stop()
 st.markdown("""
 <style>
 /* Fondo global completamente negro */
@@ -101,23 +179,39 @@ div[data-testid="stVerticalBlock"] > div[tabindex="0"] * {
 """, unsafe_allow_html=True)
 
 
-
-
-
-
-
 with open("adaptive_thresholds_all.json") as f:
     adaptive_thresholds = json.load(f)
 
-if 'start' not in st.session_state:
-    st.session_state.start = False
+# Botones de perfil y exit arriba a la derecha
+if st.session_state.logged_in and not st.session_state.start and st.session_state.get("view") != "summary":
+    button_container = st.empty()
 
-if not st.session_state.start:
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.image("logo.png", width=340)
-        st.markdown("<h1 style='text-align:center; color:#FF6B00;'>Smart Trainer</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; color:gray;'>Injury prevention assistant</p>", unsafe_allow_html=True)
+    with button_container:
+        top_col1, top_col2, top_col3 = st.columns([9, 1, 1])
+        with top_col3:
+            with st.expander(f"👤 {st.session_state.username}", expanded=False):
+                st.markdown(f"**Username:** `{st.session_state.username}`")
+                if st.button("🗑 Delete Account"):
+                    users = load_users()
+                    if st.session_state.username in users:
+                        del users[st.session_state.username]
+                        save_users(users)
+                        st.success("User deleted. Restarting...")
+                        time.sleep(1)
+                        st.session_state.clear()
+                        st.rerun()
+
+            if st.button("🚪 Exit"):
+                st.session_state.clear()
+                st.rerun()
+
+        # Contenido central estilizado
+        logo_col1, logo_col2, logo_col3 = st.columns([1, 2, 1])
+        with logo_col2:
+            st.image("logo.png", width=220)
+            st.markdown("<h1 style='color: #FF6B00; text-align: center;'>Smart Trainer</h1>", unsafe_allow_html=True)
+            st.markdown("<p style='color: gray; text-align: center;'>Injury prevention assistant</p>", unsafe_allow_html=True)
+
 
 
 
@@ -733,6 +827,7 @@ if st.sidebar.button("▶ Start Training"):
     st.session_state.locked_user = user
     st.session_state.alert_history = []
     st.session_state.alert_timestamps = []
+    st.session_state.finished_data = None  # limpiar datos previos
     st.rerun()
 
 if st.sidebar.button("⏹ Stop Training"):
@@ -740,174 +835,192 @@ if st.sidebar.button("⏹ Stop Training"):
     if st.session_state.data is not None:
         folder = "trainings"
         os.makedirs(folder, exist_ok=True)
-        df_save = st.session_state.data.copy()
+        df_save = st.session_state.data.iloc[:st.session_state.index + 1].copy()
         if not df_save.empty:
+            st.session_state.finished_data = df_save
+            st.session_state.locked_user = user
             filename = datetime.now().strftime("%d-%m-%Y %H-%M") + ".csv"
             path = os.path.join(folder, filename)
             df_save.to_csv(path, index=False)
-            st.success(f"Training saved as {filename}")
-            age = user['age']
-            sex = user['gender']
-            fc_max = 220 - age - (5 if sex == 'female' else 0)
+    st.session_state.show_summary = True  # 👈 Flag para que se muestre tras rerun
+    st.session_state.block_training_loop = True
+    st.session_state.view = "summary"
+    
+if st.session_state.get("view") == "summary":
+    if st.session_state.get("finished_data") is None:
+        st.markdown("⏳ Cargando resumen del entrenamiento...")
+        st.stop()
+    else:
+        df_save = st.session_state.finished_data
+        user = st.session_state.locked_user
+        df_save = st.session_state.finished_data
+        user = st.session_state.locked_user
+        age = user['age']
+        sex = user['gender']
+        fc_max = 220 - age - (5 if sex == 'female' else 0)
 
-            tab1, tab2 = st.tabs(["📈 Graph Evolution", "📊 Review Parameters"])
+        tab1, tab2 = st.tabs(["📈 Graph Evolution", "📊 Review Parameters"])
 
-            with tab1:
-                st.markdown("### 📈 Training Parameter Evolution")
-                display_summary(df_save)
+        with tab1:
+            st.markdown("### 📈 Training Parameter Evolution")
+            display_summary(df_save)
+            st.markdown("###  Injury Risk Report")
+            generate_injury_report(df_save, user)
 
-                st.markdown("###  Injury Risk Report")
-                generate_injury_report(df_save, user)
+
+            # Mostrar porcentaje estimado
+            total_time = df_save["Time_s"].iloc[-1]
+            alert_time = len(st.session_state.alert_timestamps) * (total_time / len(df_save))
+            risk_pct = round((alert_time / total_time) * 100, 1)
             
+        with tab2:
+            st.markdown("### Post-Training Metrics")
+            st.session_state.messages = []
+            st.session_state.risk_status = "✅ Parameters stable"
+            st.session_state.actions = []
+            
+            avg_temp = round(df_save["Temperature_C"].mean(), 2)
+            st.markdown(f"**🌡️ Average Body Temperature:** {avg_temp} °C")
 
-                # Mostrar porcentaje estimado
-                total_time = df_save["Time_s"].iloc[-1]
-                alert_time = len(st.session_state.alert_timestamps) * (total_time / len(df_save))
-                risk_pct = round((alert_time / total_time) * 100, 1)
-                
-            with tab2:
-                st.markdown("### Post-Training Metrics")
-                st.session_state.messages = []
-                st.session_state.risk_status = "✅ Parameters stable"
-                st.session_state.actions = []
-                
-                avg_temp = round(df_save["Temperature_C"].mean(), 2)
-                st.markdown(f"**🌡️ Average Body Temperature:** {avg_temp} °C")
+            if not st.session_state.start:
+                st.session_state.risk_box.empty()
 
-                if not st.session_state.start:
-                    st.session_state.risk_box.empty()
+            def render_metric(title, desc, fig, key):
+                with st.container():
+                    st.markdown(f"""
+                    <div style='min-height:90px; margin-bottom:-25px'>
+                        <h5>{title}</h5>
+                        <p style='color:gray; font-size:13px; line-height:1.2;'>{desc}</p>
+                    </div>
+                """, unsafe_allow_html=True)
+                    st.plotly_chart(fig, use_container_width=True, key=key)
 
-                def render_metric(title, desc, fig, key):
-                    with st.container():
-                        st.markdown(f"""
-                        <div style='min-height:90px; margin-bottom:-25px'>
-                            <h5>{title}</h5>
-                            <p style='color:gray; font-size:13px; line-height:1.2;'>{desc}</p>
-                        </div>
-                    """, unsafe_allow_html=True)
-                        st.plotly_chart(fig, use_container_width=True, key=key)
+            def gauge_figure(value, unit, axis_range, color, steps):
+                is_nan = np.isnan(value)
+                display_value = 0 if is_nan else value
 
-                def gauge_figure(value, unit, axis_range, color, steps):
-                    is_nan = np.isnan(value)
-                    display_value = 0 if is_nan else value
-
-                    return go.Figure(go.Indicator(
-                        mode="gauge+number",
-                        value=display_value,
-                        number={
-                            'font': {'size': 22, 'color': "#FF6B00"},
-                            'suffix': unit if not is_nan else "",
-                            'prefix': "–" if is_nan else "",
-                            'valueformat': ".2f"
+                return go.Figure(go.Indicator(
+                    mode="gauge+number",
+                    value=display_value,
+                    number={
+                        'font': {'size': 22, 'color': "#FF6B00"},
+                        'suffix': unit if not is_nan else "",
+                        'prefix': "–" if is_nan else "",
+                        'valueformat': ".2f"
+                    },
+                    gauge={
+                        'axis': {
+                            'range': axis_range,
+                            'tickcolor': '#CCCCCC',
+                            'tickfont': {'color': 'white'}
                         },
-                        gauge={
-                            'axis': {
-                                'range': axis_range,
-                                'tickcolor': '#CCCCCC',
-                                'tickfont': {'color': 'white'}
-                            },
-                            'bar': {
-                                'color': "#FF6B00",
-                                'thickness': 0.25
-                            },
-                            'bgcolor': "#121212",
-                            'steps': [{'range': s['range'], 'color': '#00CED1'} for s in steps],
-                            'threshold': {
-                                'line': {'color': "white", 'width': 2},
-                                'thickness': 0.75,
-                                'value': display_value
-                            }
+                        'bar': {
+                            'color': "#FF6B00",
+                            'thickness': 0.25
                         },
-                        domain={'x': [0, 1], 'y': [0, 1]},
-                    )).update_layout(paper_bgcolor="#121212", font={'color': "#FFFFFF"})
+                        'bgcolor': "#121212",
+                        'steps': [{'range': s['range'], 'color': '#00CED1'} for s in steps],
+                        'threshold': {
+                            'line': {'color': "white", 'width': 2},
+                            'thickness': 0.75,
+                            'value': display_value
+                        }
+                    },
+                    domain={'x': [0, 1], 'y': [0, 1]},
+                )).update_layout(paper_bgcolor="#121212", font={'color': "#FFFFFF"})
 
-                metrics = [
-                            (" Heart Rate", "bpm", df_save["Heart_Rate_bpm"].mean(), [40, fc_max + 10], "red", [
-                    {'range': [40, 0.6 * fc_max], 'color': "#8BC34A"},
-                    {'range': [0.6 * fc_max, 0.8 * fc_max], 'color': "#FFC107"},
-                    {'range': [0.8 * fc_max, fc_max + 10], 'color': "#F44336"},
-                ], "Heart rate relative to your estimated max. High values indicate overexertion."),
+            metrics = [
+                        (" Heart Rate", "bpm", df_save["Heart_Rate_bpm"].mean(), [40, fc_max + 10], "red", [
+                {'range': [40, 0.6 * fc_max], 'color': "#8BC34A"},
+                {'range': [0.6 * fc_max, 0.8 * fc_max], 'color': "#FFC107"},
+                {'range': [0.8 * fc_max, fc_max + 10], 'color': "#F44336"},
+            ], "Heart rate relative to your estimated max. High values indicate overexertion."),
 
-                (" HRV (RMSSD)", "ms", df_save["HRV_RMSSD_ms"].mean(), [10, 100], "blue", [
-                    {'range': [10, 30], 'color': "#F44336"},
-                    {'range': [30, 50], 'color': "#FFC107"},
-                    {'range': [50, 100], 'color': "#8BC34A"},
-                ], "Higher variability reflects better recovery and lower stress."),
+            (" HRV (RMSSD)", "ms", df_save["HRV_RMSSD_ms"].mean(), [10, 100], "blue", [
+                {'range': [10, 30], 'color': "#F44336"},
+                {'range': [30, 50], 'color': "#FFC107"},
+                {'range': [50, 100], 'color': "#8BC34A"},
+            ], "Higher variability reflects better recovery and lower stress."),
 
-                (" Fatigue", "", df_save["Estimated_Fatigue"].mean(), [0, 1], "orange", [
-                    {'range': [0, 0.4], 'color': "#8BC34A"},
-                    {'range': [0.4, 0.7], 'color': "#FFC107"},
-                    {'range': [0.7, 1], 'color': "#F44336"},
-                ], "Accumulated physiological load. Higher levels indicate need for recovery."),
+            (" Fatigue", "", df_save["Estimated_Fatigue"].mean(), [0, 1], "orange", [
+                {'range': [0, 0.4], 'color': "#8BC34A"},
+                {'range': [0.4, 0.7], 'color': "#FFC107"},
+                {'range': [0.7, 1], 'color': "#F44336"},
+            ], "Accumulated physiological load. Higher levels indicate need for recovery."),
 
-                (" Sweat Loss", "ml/min", df_save["Sweat_Loss_ml_min"].mean(), [0, 10], "blue", [
-                    {'range': [0, 3], 'color': "#8BC34A"},
-                    {'range': [3, 6], 'color': "#FFC107"},
-                    {'range': [6, 10], 'color': "#F44336"},
-                ], "Estimated fluid loss. High values require regular hydration."),
+            (" Sweat Loss", "ml/min", df_save["Sweat_Loss_ml_min"].mean(), [0, 10], "blue", [
+                {'range': [0, 3], 'color': "#8BC34A"},
+                {'range': [3, 6], 'color': "#FFC107"},
+                {'range': [6, 10], 'color': "#F44336"},
+            ], "Estimated fluid loss. High values require regular hydration."),
 
-                (" Electrolyte Loss", "mmol/L", df_save["Electrolyte_Loss_mmol_L"].mean(), [0, 1], "blue", [
-                    {'range': [0, 0.3], 'color': "#8BC34A"},
-                    {'range': [0.3, 0.5], 'color': "#FFC107"},
-                    {'range': [0.5, 1], 'color': "#F44336"},
-                ], "Electrolytes lost through sweat. Important to replenish when high."),
+            (" Electrolyte Loss", "mmol/L", df_save["Electrolyte_Loss_mmol_L"].mean(), [0, 1], "blue", [
+                {'range': [0, 0.3], 'color': "#8BC34A"},
+                {'range': [0.3, 0.5], 'color': "#FFC107"},
+                {'range': [0.5, 1], 'color': "#F44336"},
+            ], "Electrolytes lost through sweat. Important to replenish when high."),
 
-                (" Cadence", "spm", df_save["Cadence_steps_min"].mean(), [130, 190], "purple", [
-                    {'range': [130, 150], 'color': "#F44336"},
-                    {'range': [150, 165], 'color': "#FFC107"},
-                    {'range': [165, 190], 'color': "#8BC34A"},
-                ], "Steps per minute. A stable cadence reduces injury risk."),
+            (" Cadence", "spm", df_save["Cadence_steps_min"].mean(), [130, 190], "purple", [
+                {'range': [130, 150], 'color': "#F44336"},
+                {'range': [150, 165], 'color': "#FFC107"},
+                {'range': [165, 190], 'color': "#8BC34A"},
+            ], "Steps per minute. A stable cadence reduces injury risk."),
 
-                (" Impact", "g", df_save["Impact_g"].mean(), [0, 4], "brown", [
-                    {'range': [0, 1.8], 'color': "#8BC34A"},
-                    {'range': [1.8, 2.5], 'color': "#FFC107"},
-                    {'range': [2.5, 4], 'color': "#F44336"},
-                ], "Force per stride. Impact stresses joints."),
+            (" Impact", "g", df_save["Impact_g"].mean(), [0, 4], "brown", [
+                {'range': [0, 1.8], 'color': "#8BC34A"},
+                {'range': [1.8, 2.5], 'color': "#FFC107"},
+                {'range': [2.5, 4], 'color': "#F44336"},
+            ], "Force per stride. Impact stresses joints."),
 
-                (" Knee Left", "g", df_save["Knee_Acceleration_Left_g"].mean() if "Knee_Acceleration_Left_g" in df_save.columns else float("nan"), [0, 4], "brown", [
+            (" Knee Left", "g", df_save["Knee_Acceleration_Left_g"].mean() if "Knee_Acceleration_Left_g" in df_save.columns else float("nan"), [0, 4], "brown", [
 
-                    {'range': [0, 1.8], 'color': "#8BC34A"},
-                    {'range': [1.8, 2.5], 'color': "#FFC107"},
-                    {'range': [2.5, 4], 'color': "#F44336"},
-                ], "Acceleration of left knee during motion."),
+                {'range': [0, 1.8], 'color': "#8BC34A"},
+                {'range': [1.8, 2.5], 'color': "#FFC107"},
+                {'range': [2.5, 4], 'color': "#F44336"},
+            ], "Acceleration of left knee during motion."),
 
-                (" Knee Right", "g", df_save["Knee_Acceleration_Right_g"].mean() if "Knee_Acceleration_Right_g" in df_save.columns else float("nan"), [0, 4], "brown", [
+            (" Knee Right", "g", df_save["Knee_Acceleration_Right_g"].mean() if "Knee_Acceleration_Right_g" in df_save.columns else float("nan"), [0, 4], "brown", [
 
-                    {'range': [0, 1.8], 'color': "#8BC34A"},
-                    {'range': [1.8, 2.5], 'color': "#FFC107"},
-                    {'range': [2.5, 4], 'color': "#F44336"},
-                ], "Acceleration of right knee during motion."),
+                {'range': [0, 1.8], 'color': "#8BC34A"},
+                {'range': [1.8, 2.5], 'color': "#FFC107"},
+                {'range': [2.5, 4], 'color': "#F44336"},
+            ], "Acceleration of right knee during motion."),
 
-                (" Ankle Left", "g", df_save["Ankle_Acceleration_Left_g"].mean() if "Ankle_Acceleration_Left_g" in df_save.columns else float("nan"), [0, 4], "brown", [
+            (" Ankle Left", "g", df_save["Ankle_Acceleration_Left_g"].mean() if "Ankle_Acceleration_Left_g" in df_save.columns else float("nan"), [0, 4], "brown", [
 
-                    {'range': [0, 1.8], 'color': "#8BC34A"},
-                    {'range': [1.8, 2.5], 'color': "#FFC107"},
-                    {'range': [2.5, 4], 'color': "#F44336"},
-                ], "Acceleration of the left ankle during motion."),
+                {'range': [0, 1.8], 'color': "#8BC34A"},
+                {'range': [1.8, 2.5], 'color': "#FFC107"},
+                {'range': [2.5, 4], 'color': "#F44336"},
+            ], "Acceleration of the left ankle during motion."),
 
-                (" Ankle Right", "g", df_save["Ankle_Acceleration_Right_g"].mean() if "Ankle_Acceleration_Right_g" in df_save.columns else float("nan"), [0, 4], "brown", [
+            (" Ankle Right", "g", df_save["Ankle_Acceleration_Right_g"].mean() if "Ankle_Acceleration_Right_g" in df_save.columns else float("nan"), [0, 4], "brown", [
 
-                    {'range': [0, 1.8], 'color': "#8BC34A"},
-                    {'range': [1.8, 2.5], 'color': "#FFC107"},
-                    {'range': [2.5, 4], 'color': "#F44336"},
-                ], "Acceleration of right ankle during motion."),
+                {'range': [0, 1.8], 'color': "#8BC34A"},
+                {'range': [1.8, 2.5], 'color': "#FFC107"},
+                {'range': [2.5, 4], 'color': "#F44336"},
+            ], "Acceleration of right ankle during motion."),
 
-                (" Ventilation", "L/min", df_save["Ventilation_L_min"].mean() if "Ventilation_L_min" in df_save.columns else float("nan"), [5, 25], "blue", [
+            (" Ventilation", "L/min", df_save["Ventilation_L_min"].mean() if "Ventilation_L_min" in df_save.columns else float("nan"), [5, 25], "blue", [
 
-                    {'range': [5, 12], 'color': "#8BC34A"},
-                    {'range': [12, 18], 'color': "#FFC107"},
-                    {'range': [18, 25], 'color': "#F44336"},
-                ], "Air volume inhaled and exhaled per minute."),
-                ]
+                {'range': [5, 12], 'color': "#8BC34A"},
+                {'range': [12, 18], 'color': "#FFC107"},
+                {'range': [18, 25], 'color': "#F44336"},
+            ], "Air volume inhaled and exhaled per minute."),
+            ]
 
-                for i in range(0, len(metrics), 3):  # de 3 en 3
-                    cols = st.columns(3)
-                    for j in range(3):
-                        if i + j < len(metrics):
-                            with cols[j]:
-                                name, unit, value, rng, color, steps, desc = metrics[i + j]
-                                fig = gauge_figure(value, unit, rng, color, steps)
-                                render_metric(name, desc, fig, key=f"metric_{i+j}")
+            for i in range(0, len(metrics), 3):  # de 3 en 3
+                cols = st.columns(3)
+                for j in range(3):
+                    if i + j < len(metrics):
+                        with cols[j]:
+                            name, unit, value, rng, color, steps, desc = metrics[i + j]
+                            fig = gauge_figure(value, unit, rng, color, steps)
+                            render_metric(name, desc, fig, key=f"metric_{i+j}")
+            st.session_state.show_summary = False  # 🔁 Reseteamos el flag
+            st.session_state.block_training_loop = False
+            st.session_state.view = "main"
+    
+
 
 
             
@@ -1029,7 +1142,7 @@ def evaluate_injury_risk(window_df, user):
 # TRAINING IN PROGRESS
 # ----------------------
 
-if st.session_state.start and st.session_state.data is not None:
+if st.session_state.start and st.session_state.data is not None and not st.session_state.get('block_training_loop', False):
     df = st.session_state.data
     st.subheader("Live Training")
     risk_box = st.empty()
@@ -1076,7 +1189,7 @@ if st.session_state.start and st.session_state.data is not None:
 
             status_color = 'red' if messages else 'green'
             risk_html = f"""
-                <div id='risk-box' style='padding:1rem;background-color:#1E1E1E;border-radius:10px; color:#FF6B00; font-weight:500; margin-bottom:8px; animation: {'pulse 1s infinite' if messages else 'none'};'>
+                <div id='risk-box' style='padding:1rem;background-color:#1E1E1E;border-radius:10px; color:#FF6B00; font-weight:500; margin-bottom:8px; animation: {'pulse 1s infinite' if messages else 'none'};' >
                 <b>Injury Risk Monitor:</b> <span style='color:{status_color}'><b>{risk_status}</b></span><br>
                 {('<br>'.join(messages)) if messages else 'All values within safe range.'}
                 {"<hr style='margin-top:8px'><b>Clinical Recommendations:</b>" if actions else ''}
@@ -1128,7 +1241,7 @@ if st.session_state.start and st.session_state.data is not None:
         """,
         unsafe_allow_html=True
     )
-
+        
         time.sleep(0.05)
         st.session_state.index += 1
 
