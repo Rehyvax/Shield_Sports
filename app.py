@@ -12,6 +12,16 @@ from visuals import (
                 display_cadence_gauge, display_impact_gauge
             )
 import json
+import qrcode
+from PIL import Image
+import base64
+
+app_url = "https://SmartTrainer.streamlit.app"
+
+# Generar QR
+qr_img = qrcode.make(app_url)
+qr_img.save("smart_trainer_qr.png")
+
 USER_FILE = "users.json"
 
 def load_users():
@@ -44,6 +54,8 @@ if 'show_summary' not in st.session_state:
     st.session_state.show_summary = False
 if 'block_training_loop' not in st.session_state:
     st.session_state.block_training_loop = False
+if 'view' not in st.session_state:
+    st.session_state.view = "main"
 
 # Interfaz de login (sólo si no se ha iniciado sesión)
 if not st.session_state.logged_in:
@@ -66,11 +78,41 @@ if not st.session_state.logged_in:
                 st.rerun()
             else:
                 st.error("Invalid username or password")
+        # Inicializar campos de registro si no se ha hecho aún
+        if "register_reset" not in st.session_state:
+            st.session_state["New username"] = ""
+            st.session_state["New password"] = ""
+            st.session_state["Confirm password"] = ""
+            st.session_state["show_terms"] = False
+            st.session_state["register_reset"] = True  # Evita re-inicializar tras cada ejecución
 
         with st.expander("➕ Create new account"):
-            new_user = st.text_input("New username")
-            new_pass = st.text_input("New password", type="password")
-            confirm_pass = st.text_input("Confirm password", type="password")
+            new_user = st.text_input("New username", key="New username")
+            new_pass = st.text_input("New password", type="password", key="New password")
+            confirm_pass = st.text_input("Confirm password", type="password", key="Confirm password")
+
+            st.markdown("<label style='font-weight: 500;'>📄 Terms and Conditions</label>", unsafe_allow_html=True)
+
+            # Botón para mostrar el PDF
+            if st.button("View Terms and Conditions"):
+                st.session_state["show_terms"] = True
+
+            # Mostrar PDF si el usuario ha hecho clic
+            if st.session_state["show_terms"]:
+                try:
+                    with open("terms.pdf", "rb") as f:
+                        base64_pdf = base64.b64encode(f.read()).decode("utf-8")
+                        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="400px" type="application/pdf"></iframe>'
+                        st.markdown(pdf_display, unsafe_allow_html=True)
+                except FileNotFoundError:
+                    st.error("❌ PDF file not found. Please check the filename.")
+
+            # Solo se puede aceptar si se ha mostrado el PDF
+            accept_terms = False
+            if st.session_state["show_terms"]:
+                accept_terms = st.checkbox("I accept the Terms and Conditions")
+
+            # Registro de usuario
             if st.button("Register"):
                 if not new_user or not new_pass:
                     st.warning(" Please fill all fields.")
@@ -78,9 +120,20 @@ if not st.session_state.logged_in:
                     st.warning(" Username already exists.")
                 elif new_pass != confirm_pass:
                     st.warning(" Passwords do not match.")
+                elif not st.session_state["show_terms"]:
+                    st.warning(" You must view the Terms and Conditions first.")
+                elif not accept_terms:
+                    st.warning(" You must accept the Terms and Conditions.")
                 else:
                     if register_user(new_user, new_pass):
                         st.success("✅ User registered successfully. You can now log in.")
+                        time.sleep(1)
+
+                        # Borramos el estado para reiniciar campos y cerrar expander
+                        for key in ["New username", "New password", "Confirm password", "show_terms", "Create new account", "register_reset"]:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        st.rerun()
                     else:
                         st.error(" Error registering user.")
     st.stop()
@@ -831,20 +884,22 @@ if st.sidebar.button("▶ Start Training"):
     st.rerun()
 
 if st.sidebar.button("⏹ Stop Training"):
-    st.session_state.start = False
-    if st.session_state.data is not None:
-        folder = "trainings"
-        os.makedirs(folder, exist_ok=True)
-        df_save = st.session_state.data.iloc[:st.session_state.index + 1].copy()
-        if not df_save.empty:
-            st.session_state.finished_data = df_save
-            st.session_state.locked_user = user
-            filename = datetime.now().strftime("%d-%m-%Y %H-%M") + ".csv"
-            path = os.path.join(folder, filename)
-            df_save.to_csv(path, index=False)
-    st.session_state.show_summary = True  # 👈 Flag para que se muestre tras rerun
-    st.session_state.block_training_loop = True
-    st.session_state.view = "summary"
+    if st.session_state.get("view") != "summary":
+        st.session_state.start = False
+        if st.session_state.data is not None:
+            folder = "trainings"
+            os.makedirs(folder, exist_ok=True)
+            df_save = st.session_state.data.iloc[:st.session_state.index + 1].copy()
+            if not df_save.empty:
+                st.session_state.finished_data = df_save
+                st.session_state.locked_user = user
+                filename = datetime.now().strftime("%d-%m-%Y %H-%M") + ".csv"
+                path = os.path.join(folder, filename)
+                df_save.to_csv(path, index=False)
+        st.session_state.show_summary = True
+        st.session_state.block_training_loop = True
+        st.session_state.view = "summary"
+        st.rerun()
     
 if st.session_state.get("view") == "summary":
     if st.session_state.get("finished_data") is None:
@@ -1019,6 +1074,18 @@ if st.session_state.get("view") == "summary":
             st.session_state.show_summary = False  # 🔁 Reseteamos el flag
             st.session_state.block_training_loop = False
             st.session_state.view = "main"
+            st.markdown("---")
+
+            if st.button("🔁 Volver al inicio"):
+                st.session_state.view = "main"
+                st.session_state.finished_data = None
+                st.session_state.locked_user = None
+                st.session_state.data = None
+                st.session_state.index = 0
+                st.session_state.messages = []
+                st.session_state.risk_status = "✅ Parameters stable"
+                st.session_state.alert_history = []
+                st.rerun()
     
 
 
