@@ -58,6 +58,76 @@ if 'view' not in st.session_state:
     st.session_state.view = "main"
 
 
+import streamlit as st
+import os
+import json
+import time
+from PIL import Image
+import qrcode
+
+app_url = "https://SmartTrainer.streamlit.app"
+qr_img = qrcode.make(app_url)
+qr_img.save("smart_trainer_qr.png")
+
+USER_FILE = "users.json"
+
+def load_users():
+    if not os.path.exists(USER_FILE):
+        with open(USER_FILE, "w") as f:
+            json.dump({"Goris": "1234"}, f)
+    with open(USER_FILE, "r") as f:
+        return json.load(f)
+
+def save_users(users):
+    with open(USER_FILE, "w") as f:
+        json.dump(users, f, indent=4)
+
+def register_user(username, password):
+    users = load_users()
+    if username in users:
+        return False
+    users[username] = password
+    save_users(users)
+    return True
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "pdf_opened" not in st.session_state:
+    st.session_state["pdf_opened"] = False
+
+import streamlit as st
+import json
+import os
+import time
+
+USER_FILE = "users.json"
+
+def load_users():
+    if not os.path.exists(USER_FILE):
+        with open(USER_FILE, "w") as f:
+            json.dump({"admin": "1234"}, f)
+    with open(USER_FILE, "r") as f:
+        return json.load(f)
+
+def save_users(users):
+    with open(USER_FILE, "w") as f:
+        json.dump(users, f, indent=4)
+
+def register_user(username, password):
+    users = load_users()
+    if username in users:
+        return False
+    users[username] = password
+    save_users(users)
+    return True
+
+# Estado inicial
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "pdf_opened" not in st.session_state:
+    st.session_state["pdf_opened"] = False
+
+# Login UI
 if not st.session_state.logged_in:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -72,23 +142,17 @@ if not st.session_state.logged_in:
             users = load_users()
             if username in users and users[username] == password:
                 st.session_state.logged_in = True
-                st.session_state.user_type = "admin"
                 st.session_state.username = username
                 st.success("Login successful")
                 st.rerun()
             else:
                 st.error("Invalid username or password")
 
-        # Inicializar estados
+        # Create new account
         for field in ["New username", "New password", "Confirm password"]:
             if field not in st.session_state:
                 st.session_state[field] = ""
-        if "pdf_opened" not in st.session_state:
-            st.session_state["pdf_opened"] = False
-        if "show_pdf" not in st.session_state:
-            st.session_state["show_pdf"] = False
 
-        # 📦 Create new account form
         with st.expander("➕ Create new account"):
             new_user = st.text_input("New username", value=st.session_state["New username"])
             st.session_state["New username"] = new_user
@@ -99,54 +163,49 @@ if not st.session_state.logged_in:
             confirm_pass = st.text_input("Confirm password", type="password", value=st.session_state["Confirm password"])
             st.session_state["Confirm password"] = confirm_pass
 
-            st.markdown("<label style='font-weight: 500;'>📄 Terms and Conditions</label>", unsafe_allow_html=True)
+            st.markdown("📄 **Terms and Conditions**")
 
-            # Mostrar botón para ver PDF
+            # Botón para ver PDF en otra pestaña (y marcar como visto)
             if st.button("View PDF"):
-                st.session_state["show_pdf"] = True
+                js_code = '''
+                <script>
+                    window.open("/static/terms.pdf", "_blank");
+                </script>
+                '''
+                st.markdown(js_code, unsafe_allow_html=True)
                 st.session_state["pdf_opened"] = True
 
-            # Mostrar visor PDF con zoom
-            if st.session_state["show_pdf"]:
-                pdf_url = pdf_url = "https://raw.githubusercontent.com/Rehyvax/Smart_trainer/main/static/terms.pdf"
-                st.markdown(f"""
-                    <iframe src="{pdf_url}#toolbar=1&navpanes=0"
-                            width="100%" height="700px"
-                            style="border: 1px solid #ddd;"></iframe>
-                """, unsafe_allow_html=True)
-
-            # Checkbox solo si se ha abierto el PDF
             accept_terms = False
             if st.session_state["pdf_opened"]:
                 accept_terms = st.checkbox("I accept the Terms and Conditions")
 
-            # 🔐 Register logic
             if st.button("Register"):
                 if not new_user or not new_pass:
-                    st.warning(" Please fill all fields.")
+                    st.warning("Please fill all fields.")
                 elif new_user in load_users():
-                    st.warning(" Username already exists.")
+                    st.warning("Username already exists.")
                 elif new_pass != confirm_pass:
-                    st.warning(" Passwords do not match.")
+                    st.warning("Passwords do not match.")
                 elif not st.session_state["pdf_opened"]:
-                    st.warning(" You must view the Terms and Conditions first.")
+                    st.warning("You must view the Terms and Conditions first.")
                 elif not accept_terms:
-                    st.warning(" You must accept the Terms and Conditions.")
+                    st.warning("You must accept the Terms and Conditions.")
                 else:
                     if register_user(new_user, new_pass):
                         st.success("✅ User registered successfully. You can now log in.")
                         time.sleep(1)
                         for key in [
                             "New username", "New password", "Confirm password",
-                            "pdf_opened", "show_pdf"
+                            "pdf_opened"
                         ]:
                             if key in st.session_state:
                                 del st.session_state[key]
                         st.rerun()
                     else:
-                        st.error(" Error registering user.")
+                        st.error("Error registering user.")
 
         st.stop()
+
 
 
 
