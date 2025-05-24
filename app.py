@@ -56,6 +56,21 @@ if 'block_training_loop' not in st.session_state:
     st.session_state.block_training_loop = False
 if 'view' not in st.session_state:
     st.session_state.view = "main"
+if st.session_state.view == "terms":
+    st.markdown("### 📄 Terms and Conditions")
+    try:
+        with open("terms.pdf", "rb") as f:
+            base64_pdf = base64.b64encode(f.read()).decode("utf-8")
+            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800px" type="application/pdf"></iframe>'
+            st.markdown(pdf_display, unsafe_allow_html=True)
+    except FileNotFoundError:
+        st.error("❌ PDF file not found.")
+
+    if st.button(" Back"):
+        st.session_state.view = "main"
+        st.session_state["show_terms"] = True  # <- para que el checkbox aparezca al volver
+        st.rerun()
+    st.stop()
 
 # Interfaz de login (sólo si no se ha iniciado sesión)
 if not st.session_state.logged_in:
@@ -79,33 +94,31 @@ if not st.session_state.logged_in:
             else:
                 st.error("Invalid username or password")
         # Inicializar campos de registro si no se ha hecho aún
-        if "register_reset" not in st.session_state:
-            st.session_state["New username"] = ""
-            st.session_state["New password"] = ""
-            st.session_state["Confirm password"] = ""
+        for field in ["New username", "New password", "Confirm password"]:
+            if field not in st.session_state:
+                st.session_state[field] = ""
+        if "show_terms" not in st.session_state:
             st.session_state["show_terms"] = False
-            st.session_state["register_reset"] = True  # Evita re-inicializar tras cada ejecución
 
         with st.expander("➕ Create new account"):
-            new_user = st.text_input("New username", key="New username")
-            new_pass = st.text_input("New password", type="password", key="New password")
-            confirm_pass = st.text_input("Confirm password", type="password", key="Confirm password")
+            new_user = st.text_input("New username", value=st.session_state["New username"])
+            st.session_state["New username"] = new_user
+
+            new_pass = st.text_input("New password", type="password", value=st.session_state["New password"])
+            st.session_state["New password"] = new_pass
+
+            confirm_pass = st.text_input("Confirm password", type="password", value=st.session_state["Confirm password"])
+            st.session_state["Confirm password"] = confirm_pass
 
             st.markdown("<label style='font-weight: 500;'>📄 Terms and Conditions</label>", unsafe_allow_html=True)
 
             # Botón para mostrar el PDF
             if st.button("View Terms and Conditions"):
-                st.session_state["show_terms"] = True
+                st.session_state["view"] = "terms"
+                st.rerun()
 
             # Mostrar PDF si el usuario ha hecho clic
-            if st.session_state["show_terms"]:
-                try:
-                    with open("terms.pdf", "rb") as f:
-                        base64_pdf = base64.b64encode(f.read()).decode("utf-8")
-                        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="400px" type="application/pdf"></iframe>'
-                        st.markdown(pdf_display, unsafe_allow_html=True)
-                except FileNotFoundError:
-                    st.error("❌ PDF file not found. Please check the filename.")
+
 
             # Solo se puede aceptar si se ha mostrado el PDF
             accept_terms = False
