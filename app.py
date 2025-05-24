@@ -108,7 +108,7 @@ if not st.session_state.logged_in:
 
             # Mostrar visor PDF con zoom
             if st.session_state["show_pdf"]:
-                pdf_url = "/static/terms.pdf"
+                pdf_url = pdf_url = "https://raw.githubusercontent.com/Rehyvax/Smart_trainer/main/static/terms.pdf"
                 st.markdown(f"""
                     <iframe src="{pdf_url}#toolbar=1&navpanes=0"
                             width="100%" height="700px"
