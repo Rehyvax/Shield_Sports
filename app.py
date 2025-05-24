@@ -1,104 +1,8 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
 import os
-import time
-from datetime import datetime
-import plotly.graph_objects as go
-from visuals import (
-                display_hr_gauge, display_hrv_gauge, display_fatigue_gauge,
-                display_temp_gauge, display_sweat_gauge, display_elec_gauge,
-                display_cadence_gauge, display_impact_gauge
-            )
 import json
-import qrcode
-from PIL import Image
+import time
 import base64
-
-app_url = "https://SmartTrainer.streamlit.app"
-
-# Generar QR
-qr_img = qrcode.make(app_url)
-qr_img.save("smart_trainer_qr.png")
-
-USER_FILE = "users.json"
-
-def load_users():
-    if not os.path.exists(USER_FILE):
-        with open(USER_FILE, "w") as f:
-            json.dump({"Goris": "1234"}, f)
-    with open(USER_FILE, "r") as f:
-        return json.load(f)
-
-def save_users(users):
-    with open(USER_FILE, "w") as f:
-        json.dump(users, f, indent=4)
-
-def register_user(username, password):
-    users = load_users()
-    if username in users:
-        return False  # Username already exists
-    users[username] = password
-    save_users(users)
-    return True
-
-# Inicialización del estado de sesión
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "user_type" not in st.session_state:
-    st.session_state.user_type = None
-if 'start' not in st.session_state:
-    st.session_state.start = False
-if 'show_summary' not in st.session_state:
-    st.session_state.show_summary = False
-if 'block_training_loop' not in st.session_state:
-    st.session_state.block_training_loop = False
-if 'view' not in st.session_state:
-    st.session_state.view = "main"
-
-
-import streamlit as st
-import os
-import json
-import time
-from PIL import Image
-import qrcode
-
-app_url = "https://SmartTrainer.streamlit.app"
-qr_img = qrcode.make(app_url)
-qr_img.save("smart_trainer_qr.png")
-
-USER_FILE = "users.json"
-
-def load_users():
-    if not os.path.exists(USER_FILE):
-        with open(USER_FILE, "w") as f:
-            json.dump({"Goris": "1234"}, f)
-    with open(USER_FILE, "r") as f:
-        return json.load(f)
-
-def save_users(users):
-    with open(USER_FILE, "w") as f:
-        json.dump(users, f, indent=4)
-
-def register_user(username, password):
-    users = load_users()
-    if username in users:
-        return False
-    users[username] = password
-    save_users(users)
-    return True
-
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "pdf_opened" not in st.session_state:
-    st.session_state["pdf_opened"] = False
-
-import streamlit as st
-import json
-import os
-import time
 
 USER_FILE = "users.json"
 
@@ -121,13 +25,51 @@ def register_user(username, password):
     save_users(users)
     return True
 
-# Estado inicial
+# Inicialización del estado de sesión
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
-if "pdf_opened" not in st.session_state:
-    st.session_state["pdf_opened"] = False
+if "user_type" not in st.session_state:
+    st.session_state.user_type = None
+if "start" not in st.session_state:
+    st.session_state.start = False
+if "show_summary" not in st.session_state:
+    st.session_state.show_summary = False
+if "block_training_loop" not in st.session_state:
+    st.session_state.block_training_loop = False
+if "view" not in st.session_state:
+    st.session_state.view = "main"
 
-# Login UI
+# Inicializa campos sin sobreescribirlos
+for field in ["New username", "New password", "Confirm password"]:
+    if field not in st.session_state:
+        st.session_state[field] = ""
+if "show_terms" not in st.session_state:
+    st.session_state["show_terms"] = False
+
+# VISTA DE TÉRMINOS
+if st.session_state.view == "terms":
+    st.markdown("### 📄 Terms and Conditions")
+
+    try:
+        with open("terms.pdf", "rb") as f:
+            base64_pdf = base64.b64encode(f.read()).decode("utf-8")
+            pdf_display = f'''
+                <iframe src="data:application/pdf;base64,{base64_pdf}"
+                        width="100%" height="800px"
+                        style="border: none;"></iframe>
+            '''
+            st.markdown(pdf_display, unsafe_allow_html=True)
+    except FileNotFoundError:
+        st.error("❌ PDF file not found.")
+
+    if st.button("🔙 Back"):
+        st.session_state.view = "main"
+        st.session_state["show_terms"] = True
+        st.rerun()
+
+    st.stop()
+
+# INTERFAZ DE LOGIN Y REGISTRO
 if not st.session_state.logged_in:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -142,16 +84,12 @@ if not st.session_state.logged_in:
             users = load_users()
             if username in users and users[username] == password:
                 st.session_state.logged_in = True
+                st.session_state.user_type = "admin"
                 st.session_state.username = username
                 st.success("Login successful")
                 st.rerun()
             else:
                 st.error("Invalid username or password")
-
-        # Create new account
-        for field in ["New username", "New password", "Confirm password"]:
-            if field not in st.session_state:
-                st.session_state[field] = ""
 
         with st.expander("➕ Create new account"):
             new_user = st.text_input("New username", value=st.session_state["New username"])
@@ -163,22 +101,19 @@ if not st.session_state.logged_in:
             confirm_pass = st.text_input("Confirm password", type="password", value=st.session_state["Confirm password"])
             st.session_state["Confirm password"] = confirm_pass
 
-            st.markdown("📄 **Terms and Conditions**")
+            st.markdown("<label style='font-weight: 500;'>📄 Terms and Conditions</label>", unsafe_allow_html=True)
 
-            # Botón para ver PDF en otra pestaña (y marcar como visto)
-            if st.button("View PDF"):
-                js_code = '''
-                <script>
-                    window.open("/static/terms.pdf", "_blank");
-                </script>
-                '''
-                st.markdown(js_code, unsafe_allow_html=True)
-                st.session_state["pdf_opened"] = True
+            # Botón para mostrar el PDF
+            if st.button("View Terms and Conditions"):
+                st.session_state["view"] = "terms"
+                st.rerun()
 
+            # Mostrar checkbox solo si se ha visualizado el PDF
             accept_terms = False
-            if st.session_state["pdf_opened"]:
+            if st.session_state["show_terms"]:
                 accept_terms = st.checkbox("I accept the Terms and Conditions")
 
+            # Registro
             if st.button("Register"):
                 if not new_user or not new_pass:
                     st.warning("Please fill all fields.")
@@ -186,7 +121,7 @@ if not st.session_state.logged_in:
                     st.warning("Username already exists.")
                 elif new_pass != confirm_pass:
                     st.warning("Passwords do not match.")
-                elif not st.session_state["pdf_opened"]:
+                elif not st.session_state["show_terms"]:
                     st.warning("You must view the Terms and Conditions first.")
                 elif not accept_terms:
                     st.warning("You must accept the Terms and Conditions.")
@@ -194,10 +129,8 @@ if not st.session_state.logged_in:
                     if register_user(new_user, new_pass):
                         st.success("✅ User registered successfully. You can now log in.")
                         time.sleep(1)
-                        for key in [
-                            "New username", "New password", "Confirm password",
-                            "pdf_opened"
-                        ]:
+                        # Reiniciamos los estados
+                        for key in ["New username", "New password", "Confirm password", "show_terms", "register_reset"]:
                             if key in st.session_state:
                                 del st.session_state[key]
                         st.rerun()
@@ -205,7 +138,6 @@ if not st.session_state.logged_in:
                         st.error("Error registering user.")
 
         st.stop()
-
 
 
 
