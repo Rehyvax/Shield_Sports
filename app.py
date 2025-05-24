@@ -56,29 +56,8 @@ if 'block_training_loop' not in st.session_state:
     st.session_state.block_training_loop = False
 if 'view' not in st.session_state:
     st.session_state.view = "main"
-if st.session_state.view == "terms":
-    st.markdown("### 📄 Terms and Conditions")
 
-    with st.expander(" Click here to view the Terms and Conditions"):
-        try:
-            with open("terms.pdf", "rb") as f:
-                base64_pdf = base64.b64encode(f.read()).decode("utf-8")
-                pdf_display = f'''
-                    <iframe src="data:application/pdf;base64,{base64_pdf}"
-                            width="100%" height="600px"
-                            style="border: none;"></iframe>
-                '''
-                st.markdown(pdf_display, unsafe_allow_html=True)
-        except FileNotFoundError:
-            st.error("❌ PDF file not found.")
 
-    if st.button("🔙 Back"):
-        st.session_state.view = "main"
-        st.session_state["show_terms"] = True
-        st.rerun()
-    st.stop()
-
-# Interfaz de login (sólo si no se ha iniciado sesión)
 if not st.session_state.logged_in:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -99,13 +78,17 @@ if not st.session_state.logged_in:
                 st.rerun()
             else:
                 st.error("Invalid username or password")
-        # Inicializar campos de registro si no se ha hecho aún
+
+        # Inicializar estados
         for field in ["New username", "New password", "Confirm password"]:
             if field not in st.session_state:
                 st.session_state[field] = ""
-        if "show_terms" not in st.session_state:
-            st.session_state["show_terms"] = False
+        if "pdf_opened" not in st.session_state:
+            st.session_state["pdf_opened"] = False
+        if "show_pdf" not in st.session_state:
+            st.session_state["show_pdf"] = False
 
+        # 📦 Create new account form
         with st.expander("➕ Create new account"):
             new_user = st.text_input("New username", value=st.session_state["New username"])
             st.session_state["New username"] = new_user
@@ -118,20 +101,26 @@ if not st.session_state.logged_in:
 
             st.markdown("<label style='font-weight: 500;'>📄 Terms and Conditions</label>", unsafe_allow_html=True)
 
-            # Botón para mostrar el PDF
-            if st.button("View Terms and Conditions"):
-                st.session_state["view"] = "terms"
-                st.rerun()
+            # Mostrar botón para ver PDF
+            if st.button("View PDF"):
+                st.session_state["show_pdf"] = True
+                st.session_state["pdf_opened"] = True
 
-            # Mostrar PDF si el usuario ha hecho clic
+            # Mostrar visor PDF con zoom
+            if st.session_state["show_pdf"]:
+                pdf_url = "/static/terms.pdf"
+                st.markdown(f"""
+                    <iframe src="{pdf_url}#toolbar=1&navpanes=0"
+                            width="100%" height="700px"
+                            style="border: 1px solid #ddd;"></iframe>
+                """, unsafe_allow_html=True)
 
-
-            # Solo se puede aceptar si se ha mostrado el PDF
+            # Checkbox solo si se ha abierto el PDF
             accept_terms = False
-            if st.session_state["show_terms"]:
+            if st.session_state["pdf_opened"]:
                 accept_terms = st.checkbox("I accept the Terms and Conditions")
 
-            # Registro de usuario
+            # 🔐 Register logic
             if st.button("Register"):
                 if not new_user or not new_pass:
                     st.warning(" Please fill all fields.")
@@ -139,7 +128,7 @@ if not st.session_state.logged_in:
                     st.warning(" Username already exists.")
                 elif new_pass != confirm_pass:
                     st.warning(" Passwords do not match.")
-                elif not st.session_state["show_terms"]:
+                elif not st.session_state["pdf_opened"]:
                     st.warning(" You must view the Terms and Conditions first.")
                 elif not accept_terms:
                     st.warning(" You must accept the Terms and Conditions.")
@@ -147,15 +136,19 @@ if not st.session_state.logged_in:
                     if register_user(new_user, new_pass):
                         st.success("✅ User registered successfully. You can now log in.")
                         time.sleep(1)
-
-                        # Borramos el estado para reiniciar campos y cerrar expander
-                        for key in ["New username", "New password", "Confirm password", "show_terms", "Create new account", "register_reset"]:
+                        for key in [
+                            "New username", "New password", "Confirm password",
+                            "pdf_opened", "show_pdf"
+                        ]:
                             if key in st.session_state:
                                 del st.session_state[key]
                         st.rerun()
                     else:
                         st.error(" Error registering user.")
-    st.stop()
+
+        st.stop()
+
+
 
 
 view_mode = st.session_state.get("view", "main")
