@@ -58,17 +58,23 @@ if 'view' not in st.session_state:
     st.session_state.view = "main"
 if st.session_state.view == "terms":
     st.markdown("### 📄 Terms and Conditions")
-    try:
-        with open("terms.pdf", "rb") as f:
-            base64_pdf = base64.b64encode(f.read()).decode("utf-8")
-            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800px" type="application/pdf"></iframe>'
-            st.markdown(pdf_display, unsafe_allow_html=True)
-    except FileNotFoundError:
-        st.error("❌ PDF file not found.")
 
-    if st.button(" Back"):
+    with st.expander(" Click here to view the Terms and Conditions"):
+        try:
+            with open("terms.pdf", "rb") as f:
+                base64_pdf = base64.b64encode(f.read()).decode("utf-8")
+                pdf_display = f'''
+                    <iframe src="data:application/pdf;base64,{base64_pdf}"
+                            width="100%" height="600px"
+                            style="border: none;"></iframe>
+                '''
+                st.markdown(pdf_display, unsafe_allow_html=True)
+        except FileNotFoundError:
+            st.error("❌ PDF file not found.")
+
+    if st.button("🔙 Back"):
         st.session_state.view = "main"
-        st.session_state["show_terms"] = True  # <- para que el checkbox aparezca al volver
+        st.session_state["show_terms"] = True
         st.rerun()
     st.stop()
 
