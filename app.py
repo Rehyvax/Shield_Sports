@@ -317,7 +317,7 @@ def get_variance_modulation(parameter, phase, level, weight, sex):
     }.get(level, 1.0)
 
     # FACTOR POR SEXO
-    sex_factor = 1.05 if sex == 'male' else 1.0
+    sex_factor = 1.05 if sex == 'male' else 1.1
 
     # FACTOR POR PESO
     weight_factor = 1.2 if weight > 85 else 0.8 if weight < 60 else 1.0
@@ -341,6 +341,7 @@ def simulate_training(user, duration_min=10):
         return value
 
     t = np.arange(0, duration_min * 60, 1)  # segundos
+    dur_fase_warmup = int(0.1 * len(t))
     age = user['age']
     sex = user['gender']
     weight = user['weight']
@@ -385,24 +386,35 @@ def simulate_training(user, duration_min=10):
     for i, second in enumerate(t):
         phase = phases[i]
 
+        # Inicializar contador de segundos en recovery
+        if i == 0 or phases[i - 1] != 4:
+            time_in_recovery_hr = 0
+        else:
+            time_in_recovery_hr += 1
+
         # Valores target según fase
-        if phase == 0:  # warm-up
-            hr_target = hr_rest + 0.25 * (fc_max - hr_rest)
+        if phase == 0:  # warm-up progresivo
+            progress = i / dur_fase_warmup
+            progress = np.clip(progress, 0, 1)
+            hr_target = hr_rest + progress * (0.65 * (fc_max - hr_rest))
             hrv_target = hrv_rest
             fat += fatigue_rate * 0.3
             var = 3
         elif phase in [1, 2]:  # steady
-            hr_target = hr_rest + 0.5 * (fc_max - hr_rest)
+            hr_target = hr_rest + 0.82 * (fc_max - hr_rest)
             hrv_target = hrv_rest - 5
             fat += fatigue_rate * 0.6
             var = 4
         elif phase == 3:  # peak
-            hr_target = hr_rest + 0.85 * (fc_max - hr_rest)
+            hr_target = hr_rest + 0.95 * (fc_max - hr_rest)
             hrv_target = hrv_rest - 15
             fat += fatigue_rate * 1.0
             var = 7
         elif phase == 4:  # recovery
-            hr_target = hr_rest + 0.35 * (fc_max - hr_rest)
+            # Bajada progresiva desde la frecuencia previa
+            decay_rate = 0.1  # bpm por segundo (ajustable según realismo)
+            target_min = hr_rest + 0.35 * (fc_max - hr_rest)
+            hr_target = max(prev_hr_target - decay_rate * time_in_recovery_hr, target_min)
             hrv_target = hrv_rest + 10
             fat -= fatigue_rate * 0.5
             var = 4
@@ -412,7 +424,11 @@ def simulate_training(user, duration_min=10):
             fat += fatigue_rate * 0.4
             var = 4
 
+        # Limitar fatiga entre 0 y 1
         fat = np.clip(fat, 0, 1)
+
+        # Guardar el valor anterior de HR para simular continuidad
+        prev_hr_target = hr_target
 
         # HR & HRV
         hr_val = apply_realistic_outlier(
@@ -440,7 +456,7 @@ def simulate_training(user, duration_min=10):
 
 
         # Temperatura
-        temp_rise = 0.01 + (0.005 * (1 if phase in [2, 3] else 0))
+        temp_rise = 0.008 + (0.003 * (1 if phase in [2, 3] else 0))
         temp_base = 36.5 + (fat * 1.5)
         temp_val = apply_realistic_outlier(
     temp_base + temp_rise * (i / 60) + noise(0, 0.05),
@@ -460,13 +476,13 @@ def simulate_training(user, duration_min=10):
 
         # Sudoración y electrolitos
         sweat_base = {
-    0: 1.5,
-    1: 3,
-    2: 6,
-    3: 9,
-    4: 2.5,
-    5: 3.5
-}[phase] * bsa * (1.0 if sex == 'male' else 0.85)
+    0: 3.5,
+    1: 5.5,
+    2: 7.5,
+    3: 9.5,
+    4: 4.5,
+    5: 4
+}[phase] * bsa * (1.0 if sex == 'male' else 0.65)
 
         sweat_rate = apply_realistic_outlier(
     sweat_base,
@@ -509,7 +525,7 @@ def simulate_training(user, duration_min=10):
         'beginner': 160,
         'intermediate': 170,
         'advanced': 178
-        }[level]
+        }[level] - (6 if sex == 'female' else 0)
 
         fatigue_penalty = fat * 12
         phase_modifier = -3 if phase == 4 else (0 if phase in [1, 2] else -1)
@@ -531,22 +547,47 @@ def simulate_training(user, duration_min=10):
 
         # Impacto (g)
         impact_base = {
-        'beginner': 1.6,
-        'intermediate': 2.0,
-        'advanced': 2.4
+            'beginner': 1.6,
+            'intermediate': 2.0,
+            'advanced': 2.4
         }[level]
 
-        # Aumenta con fatiga, fase intensa y peso
+        # Contador de tiempo dentro de recovery
+        if i == 0 or phases[i - 1] != 4:
+            time_in_recovery = 0
+        else:
+            time_in_recovery += 1
+
+        # Crecimiento de impacto solo fuera de recovery
+        time_growth = 0.003 * i if phase != 4 else 0
+
+        recovery_decrease = min(0.0075 * time_in_recovery, 2.5)  # puedes ajustar a 2.0 si aún baja demasiado
+
+        # Cálculo previo del valor crudo de impacto
+        raw_impact = (
+            impact_base
+            + time_growth
+            + 0.002 * weight
+            + fat * 0.4
+            + (0.15 if phase == 3 else 0)
+            - recovery_decrease
+            + noise(0, 0.12)
+        )
+
+        # Limitar a un mínimo fisiológico razonable
+        raw_impact = max(raw_impact, 0.5)
+
+        # Aplicar variabilidad fisiológica final
         impact_val = apply_realistic_outlier(
-    impact_base + 0.003 * i + 0.002 * weight + fat * 0.4 + (0.15 if phase == 3 else 0) + noise(0, 0.12),
-    base_prob=get_variance_modulation('Impact', phase, level, weight, sex) * 0.0018,
-    phase=phase,
-    level=level,
-    sex=sex,
-    weight=weight,
-    scale=1.25,
-    noise_sd=0.1
-)
+            raw_impact,
+            base_prob=get_variance_modulation('Impact', phase, level, weight, sex) * 0.0018,
+            phase=phase,
+            level=level,
+            sex=sex,
+            weight=weight,
+            scale=1.25,
+            noise_sd=0.1
+        )
         if st.session_state.get('knee_band'):
             knee_left = apply_realistic_outlier(
                 1.5 + 0.0005 * i + fat * 0.3 + noise(0, 0.15),
@@ -757,12 +798,14 @@ def generate_injury_report(df, user):
     # Factores de ajuste de umbrales
     phase_factor = 1.3 if phase == 3 else 1.1 if phase in [1, 2] else 0.9
     level_factor = {'beginner': 1.2, 'intermediate': 1.0, 'advanced': 0.8}[level]
-    sex_factor = 1.1 if sex == 'male' else 0.95
+    sex_factor = 1.1 if sex == 'male' else 1.05
     weight_factor = 1.2 if weight > 85 else 0.9 if weight < 60 else 1.0
 
     # Eliminamos el factor de tiempo y usamos solo la fase y perfil para ajustar el umbral
     def adjust(base):
         return base * phase_factor * level_factor * sex_factor * weight_factor
+    def adjust_temp(base):
+        return base * level_factor * sex_factor * weight_factor  # ❌ sin phase_factor
 
     # MÉTRICAS CARDIO
     hr = df['Heart_Rate_bpm'].mean()
@@ -779,7 +822,7 @@ def generate_injury_report(df, user):
     elec = df['Electrolyte_Loss_mmol_L'].mean()
     ve = df['Ventilation_L_min'].dropna().mean()
 
-    check("Temp", temp, adjust(adaptive_thresholds["Temperature_C"]), '>', "Core temperature too high", "Stop and cool down.")
+    check("Temp", temp, adjust_temp(adaptive_thresholds["Temperature_C"]), '>', "Core temperature too high", "Stop and cool down.")
     check("Sweat", sweat, adjust(adaptive_thresholds["Sweat_Loss_ml_min"]), '>', "Excessive sweating", "Hydrate regularly and use electrolyte drinks.")
     check("Electrolytes", elec, adjust(adaptive_thresholds["Electrolyte_Loss_mmol_L"]), '>', "High electrolyte loss", "Consider salt supplementation.")
 
@@ -1133,6 +1176,8 @@ def evaluate_injury_risk(window_df, user):
 
     def adjust(base):
         return base * phase_factor * level_factor * sex_factor * weight_factor
+    def adjust_temp(base):
+        return base * level_factor * sex_factor * weight_factor  
 
     # --------- FACTORES CARDÍACOS ----------
     hr_mean = window_df['Heart_Rate_bpm'].mean()
@@ -1157,7 +1202,7 @@ def evaluate_injury_risk(window_df, user):
     elec_mean = window_df['Electrolyte_Loss_mmol_L'].mean()
     ve_mean = window_df['Ventilation_L_min'].dropna().mean()
 
-    check(temp_mean > adjust(adaptive_thresholds["Temperature_C"]),
+    check(temp_mean > adjust_temp(adaptive_thresholds["Temperature_C"]),
           "Core temperature abnormally high",
           ["Cool down immediately", "Drink cold fluids", "Seek shade or ventilation"])
 
