@@ -16,7 +16,13 @@ USER_FILE = "users.json"
 def load_users():
     if not os.path.exists(USER_FILE):
         with open(USER_FILE, "w") as f:
-            json.dump({"admin": "1234"}, f)
+            json.dump({
+                "admin": {
+                    "password": "1234",
+                    "training_frequency": 3,
+                    "injuries": {"knee": False, "ankle": False, "tibia": False, "back": False}
+                }
+            }, f)
     with open(USER_FILE, "r") as f:
         return json.load(f)
 
@@ -28,7 +34,11 @@ def register_user(username, password):
     users = load_users()
     if username in users:
         return False
-    users[username] = password
+    users[username] = {
+        "password": password,
+        "training_frequency": 3,
+        "injuries": {"knee": False, "ankle": False, "tibia": False, "back": False}
+    }
     save_users(users)
     return True
 
@@ -89,7 +99,7 @@ if not st.session_state.logged_in:
 
         if st.button("🔐 Login"):
             users = load_users()
-            if username in users and users[username] == password:
+            if username in users and users[username]["password"] == password:
                 st.session_state.logged_in = True
                 st.session_state.user_type = "admin"
                 st.session_state.username = username
@@ -242,8 +252,37 @@ div[data-testid="stVerticalBlock"] > div[tabindex="0"] * {
 """, unsafe_allow_html=True)
 
 
+users = load_users()
+user = users.get(st.session_state.username, {})
+
 with open("adaptive_thresholds_all.json") as f:
     adaptive_thresholds = json.load(f)
+
+freq = user.get("training_frequency", 3)
+injuries = user.get("injuries", {})
+
+# Copiar umbrales para no modificar el original
+adjusted_thresholds = adaptive_thresholds.copy()
+
+# Ajuste por frecuencia
+if freq >= 4:
+    adjusted_thresholds["Impact_g"] = adaptive_thresholds["Impact_g"] * 0.92
+
+# Ajuste por lesión general (cualquier lesión)
+if any(injuries.values()):
+    adjusted_thresholds["Estimated_Fatigue"] = adaptive_thresholds["Estimated_Fatigue"] * 0.92
+    adjusted_thresholds["Impact_g"] = adjusted_thresholds["Impact_g"] * 0.92  # Reducimos aún más impacto si hay lesión
+
+# Ajuste por lesión específica en rodilla o tobillo
+if injuries.get("knee", False):
+    adjusted_thresholds["Knee_Acceleration_Left_g"] = adaptive_thresholds.get("Knee_Acceleration_Left_g", 2.0) * 0.92
+    adjusted_thresholds["Knee_Acceleration_Right_g"] = adaptive_thresholds.get("Knee_Acceleration_Right_g", 2.0) * 0.92
+
+if injuries.get("ankle", False):
+    adjusted_thresholds["Ankle_Acceleration_Left_g"] = adaptive_thresholds.get("Ankle_Acceleration_Left_g", 2.0) * 0.92
+    adjusted_thresholds["Ankle_Acceleration_Right_g"] = adaptive_thresholds.get("Ankle_Acceleration_Right_g", 2.0) * 0.92
+
+
 
 # Botones de perfil y exit arriba a la derecha
 if st.session_state.logged_in and not st.session_state.start and st.session_state.get("view") != "summary":
@@ -263,6 +302,32 @@ if st.session_state.logged_in and not st.session_state.start and st.session_stat
                         time.sleep(1)
                         st.session_state.clear()
                         st.rerun()
+                users = load_users()
+            user_data = users.get(st.session_state.username, {})
+            freq_train = user_data.get("training_frequency", 3)
+            injuries = user_data.get("injuries", {"knee": False, "ankle": False, "tibia": False, "back": False})
+
+            with st.expander("Additional information", expanded=False):
+                freq_train_new = st.slider("Training frequency per week", 0, 14, freq_train)
+                knee_new = st.checkbox("Knee injury", value=injuries.get("knee", False))
+                ankle_new = st.checkbox("Ankle injury", value=injuries.get("ankle", False))
+                tibia_new = st.checkbox("Tibia injury", value=injuries.get("tibia", False))
+                back_new = st.checkbox("Back injury", value=injuries.get("back", False))
+
+                # Guardar cambios si hay diferencias
+                if (freq_train_new != freq_train or knee_new != injuries.get("knee", False) or
+                    ankle_new != injuries.get("ankle", False) or tibia_new != injuries.get("tibia", False) or
+                    back_new != injuries.get("back", False)):
+                    
+                    users[st.session_state.username]["training_frequency"] = freq_train_new
+                    users[st.session_state.username]["injuries"] = {
+                        "knee": knee_new,
+                        "ankle": ankle_new,
+                        "tibia": tibia_new,
+                        "back": back_new
+                    }
+                    save_users(users)
+                    st.success("User info updated!")
 
             if st.button("🚪 Exit"):
                 st.session_state.clear()
@@ -348,7 +413,7 @@ def simulate_training(user, duration_min=10):
     height = user.get('height', 170)  # puedes añadirlo en el perfil
     level = user['level']
 
-    fc_max = 220 - age - (5 if sex == 'female' else 0)
+    fc_max = 230 - age - (5 if sex == 'female' else 0)
     bmi = weight / ((height / 100) ** 2)
 
     def hr_expected_rest():
@@ -424,6 +489,7 @@ def simulate_training(user, duration_min=10):
             fat += fatigue_rate * 0.4
             var = 4
 
+
         # Limitar fatiga entre 0 y 1
         fat = np.clip(fat, 0, 1)
 
@@ -482,7 +548,7 @@ def simulate_training(user, duration_min=10):
     3: 9.5,
     4: 4.5,
     5: 4
-}[phase] * bsa * (1.0 if sex == 'male' else 0.65)
+}[phase] * bsa * (1.2 if sex == 'male' else 0.6)
 
         sweat_rate = apply_realistic_outlier(
     sweat_base,
@@ -937,9 +1003,13 @@ if st.sidebar.button("▶ Start Training"):
     st.rerun()
 
 if st.sidebar.button("⏹ Stop Training"):
-    if st.session_state.get("view") != "summary":
-        st.session_state.start = False
-        if st.session_state.data is not None:
+    # Comprobar si el entrenamiento ha comenzado
+    if not st.session_state.start:
+        st.warning("You must start the training first!")
+    else:
+        # Comprobar si hay datos de entrenamiento disponibles
+        if st.session_state.data is not None and not st.session_state.data.empty:
+            st.session_state.start = False
             folder = "trainings"
             os.makedirs(folder, exist_ok=True)
             df_save = st.session_state.data.iloc[:st.session_state.index + 1].copy()
@@ -949,10 +1019,12 @@ if st.sidebar.button("⏹ Stop Training"):
                 filename = datetime.now().strftime("%d-%m-%Y %H-%M") + ".csv"
                 path = os.path.join(folder, filename)
                 df_save.to_csv(path, index=False)
-        st.session_state.show_summary = True
-        st.session_state.block_training_loop = True
-        st.session_state.view = "summary"
-        st.rerun()
+            st.session_state.show_summary = True
+            st.session_state.block_training_loop = True
+            st.session_state.view = "summary"
+            st.rerun()
+        else:
+            st.warning("No training data available. Start training first!")
     
 if st.session_state.get("view") == "summary":
     if st.session_state.get("finished_data") is None:
