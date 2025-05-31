@@ -68,11 +68,14 @@ if st.session_state.view == "terms":
     st.markdown("### 📄 Terms and Conditions")
 
     pdf_url = "https://raw.githubusercontent.com/Rehyvax/Smart_trainer/main/terms.pdf"
+    viewer_url = f"https://docs.google.com/viewer?url={pdf_url}&embedded=true"
+
     st.markdown(
-        f'<a href="{pdf_url}" target="_blank" rel="noopener noreferrer" style="font-size:16px;">'
+        f'<a href="{viewer_url}" target="_blank" rel="noopener noreferrer" style="font-size:16px;">'
         'View Terms and Conditions (PDF)</a>',
         unsafe_allow_html=True
     )
+
 
     if st.button("🔙 Back"):
         st.session_state.view = "main"
@@ -80,7 +83,6 @@ if st.session_state.view == "terms":
         st.rerun()
 
     st.stop()
-
 
 # INTERFAZ DE LOGIN Y REGISTRO
 if not st.session_state.logged_in:
