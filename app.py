@@ -67,15 +67,12 @@ if "show_terms" not in st.session_state:
 if st.session_state.view == "terms":
     st.markdown("### 📄 Terms and Conditions")
 
-    try:
-        # En lugar de leer el PDF para embed, solo mostramos un enlace
-        st.markdown(
-            '<a href="terms.pdf" target="_blank" rel="noopener noreferrer" style="font-size:16px;">'
-            'Abrir términos y condiciones (PDF)</a>',
-            unsafe_allow_html=True
-        )
-    except FileNotFoundError:
-        st.error("❌ PDF file not found.")
+    pdf_url = "https://raw.githubusercontent.com/Rehyvax/Smart_trainer/main/terms.pdf"
+    st.markdown(
+        f'<a href="{pdf_url}" target="_blank" rel="noopener noreferrer" style="font-size:16px;">'
+        'View Terms and Conditions (PDF)</a>',
+        unsafe_allow_html=True
+    )
 
     if st.button("🔙 Back"):
         st.session_state.view = "main"
