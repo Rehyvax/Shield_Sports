@@ -68,14 +68,12 @@ if st.session_state.view == "terms":
     st.markdown("### 📄 Terms and Conditions")
 
     try:
-        with open("terms.pdf", "rb") as f:
-            base64_pdf = base64.b64encode(f.read()).decode("utf-8")
-            pdf_display = f'''
-                <iframe src="data:application/pdf;base64,{base64_pdf}"
-                        width="100%" height="800px"
-                        style="border: none;"></iframe>
-            '''
-            st.markdown(pdf_display, unsafe_allow_html=True)
+        # En lugar de leer el PDF para embed, solo mostramos un enlace
+        st.markdown(
+            '<a href="terms.pdf" target="_blank" rel="noopener noreferrer" style="font-size:16px;">'
+            'Abrir términos y condiciones (PDF)</a>',
+            unsafe_allow_html=True
+        )
     except FileNotFoundError:
         st.error("❌ PDF file not found.")
 
@@ -85,6 +83,7 @@ if st.session_state.view == "terms":
         st.rerun()
 
     st.stop()
+
 
 # INTERFAZ DE LOGIN Y REGISTRO
 if not st.session_state.logged_in:
