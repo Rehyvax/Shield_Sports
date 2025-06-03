@@ -76,7 +76,6 @@ if st.session_state.view == "terms":
         unsafe_allow_html=True
     )
 
-
     if st.button("🔙 Back"):
         st.session_state.view = "main"
         st.session_state["show_terms"] = True
@@ -799,7 +798,7 @@ def display_summary(df):
     for p in range(5):
         mask = phases == p
         if np.any(mask):
-            ax.axvspan(times[mask][0], times[mask][-1], color=phase_colors[p], alpha=0.45)
+            ax.axvspan(times[mask][0], times[mask][-1], color=phase_colors[p], alpha=0.75)
 
     for col in [
     "Heart_Rate_bpm",
